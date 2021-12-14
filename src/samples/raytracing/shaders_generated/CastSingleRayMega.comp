@@ -6,7 +6,88 @@
 
 layout(binding = 0, set = 0) buffer data0 { uint out_color[]; }; //
 layout(binding = 1, set = 0) uniform accelerationStructureEXT m_pAccelStruct;
-layout(binding = 2, set = 0) buffer dataUBO { RayTracer_UBO_Data ubo; };
+layout(binding = 2, set = 0) buffer data2 { LightInfo lights[]; }; //
+layout(binding = 3, set = 0) buffer data3 { uint mat_indices_buf[]; }; //
+layout(binding = 4, set = 0) buffer data4 { uvec2 meshes[]; }; //
+layout(binding = 5, set = 0) buffer data5 { MaterialData_pbrMR materials[]; }; //
+layout(binding = 6, set = 0) buffer dataUBO { RayTracer_UBO_Data ubo; };
+
+vec4 Shade(CRT_Hit hit, LightInfo light) {
+    vec4 normal = HitNormal(hit);
+    vec4 position = HitPos(hit);
+    uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+
+    float attenuation = 1.0f / (const_attenuation + linear_attenuation * hit.t + quad_attenuation * hit.t * hit.t);
+
+    vec4 color = vec4(0.0);
+    if (light.type == 0 || light.type == 2) {
+        color = vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
+                (materials[mat_ind].baseColor * dot(normalize(normal), normalize(light.pos_dir - position)) + \
+                CookTorrance(hit, light.pos_dir - position)) * attenuation;
+    }
+    if (light.type == 1) {
+        color =  vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
+                 (materials[mat_ind].baseColor * dot(normalize(normal), normalize(-1.0f * light.pos_dir)) + \
+                 CookTorrance(hit, light.pos_dir)) * attenuation;
+    }
+
+    return color;
+}
+
+vec4 CookTorrance(CRT_Hit hit, vec4 light_dir) {
+    uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+
+    vec4 p = HitPos(hit);
+    vec4 n = HitNormal(hit);
+    vec4 l = normalize(light_dir);
+    vec4 v = normalize(ubo.m_camPos - p);
+
+    vec4 h = normalize(l + v);
+    float nh = dot (n, h);
+    float nv = dot (n, v);
+    float nl = dot (n, l);
+    float vh = dot (v, h);
+
+    // GGX
+    float m = materials[mat_ind].roughness * materials[mat_ind].roughness;
+    float m2 = m * m;
+    float nh2 = nh * nh;
+    float d = (m2 - 1.0f) * nh2 + 1.0f;
+    d = m2 / (PI * d * d);
+
+    // Frensel
+    float product = clamp(nv, 0.0f, 1.0f);
+    vec3 f0 = mix(vec3(0.04),
+                                        materials[mat_ind].baseColor.xyz,
+                                        materials[mat_ind].metallic);
+    vec3 f = mix(f0, vec3(1.0), pow(1.0 - product, 5.0));
+
+    // G_default
+    float g = min(1.0f, min(2.0f * nh * nv / vh, 2.0f * nh * nl / vh));
+
+    vec3 ct = f * (0.25f * d * g / nv);
+    float diff = max(nl, 0.0f);
+    float ks = 0.5f;
+
+    return vec4(diff * materials[mat_ind].baseColor.xyz + ks * ct, 1.0);
+}
+
+vec4 HitNormal(CRT_Hit hit) {
+    uint ind0 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 0];
+    uint ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
+    uint ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
+
+    vec4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0];
+    vec4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1];
+    vec4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2];
+
+    vec3 norm0 = DecodeNormal(as_uint32(ver0.w));
+    vec3 norm1 = DecodeNormal(as_uint32(ver1.w));
+    vec3 norm2 = DecodeNormal(as_uint32(ver2.w));
+
+    vec3 normal = norm0 * hit.coords[0] + norm1 * hit.coords[1] + norm2 * (1 - hit.coords[0] - hit.coords[1]);
+    return normalize(transpose(inverse4x4(inst_matrices[hit.instId])) * vec4(normal, 0.0));
+}
 
 // RayScene intersection with 'm_pAccelStruct'
 //
@@ -64,12 +145,55 @@ layout( push_constant ) uniform kernelArgs
 void kernel_RayTrace_out_color(uint tidX, uint tidY, in vec4 rayPosAndNear, in vec4 rayDirAndFar, uint out_colorOffset) 
 {
   
-  const vec4 rayPos = rayPosAndNear;
-  const vec4 rayDir = rayDirAndFar ;
+  vec4 color = vec4(0.0f,0.0f,0.0f,0.0f);
+  vec4 k = vec4(1.0f,1.0f,1.0f,1.0f);
 
-  CRT_Hit hit = m_pAccelStruct_RayQuery_NearestHit(rayPos, rayDir);
+  vec4 rayPos = rayPosAndNear;
+  vec4 rayDir = rayDirAndFar ;
 
-  out_color[tidY * ubo.m_width + tidX + out_colorOffset] = m_palette[hit.instId % palette_size];
+  for(uint i = 0; i < MAX_DEPTH; i++) {
+      CRT_Hit hit = m_pAccelStruct_RayQuery_NearestHit(rayPos, rayDir);
+
+      if(hit.primId == -1) {
+          break;
+      }
+
+      vec4 hit_point = rayPos + rayDir * hit.t;
+
+      for (int j = 0; uint(j) < ubo.lights_size; j++) {
+          if(lights[j].type == 0) {
+              if (!m_pAccelStruct_RayQuery_AnyHit(hit_point, lights[j].pos_dir - hit_point)) {
+                  color = k * Shade(hit, lights[j]);
+              }
+          }
+          else if (lights[j].type == 1) {
+              if (!m_pAccelStruct_RayQuery_AnyHit(hit_point, -1 * lights[j].pos_dir)) {
+                  color = k * Shade(hit, lights[j]);
+              }
+          }
+          else {
+              if (m_pAccelStruct_RayQuery_NearestHit(hit_point, lights[j].pos_dir - hit_point).instId == lights[j].instance_id) {
+                  color = k * Shade(hit, lights[j]);
+              }
+          }
+      }
+
+      uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+
+      if (materials[mat_ind].metallic <= 10e-4){
+          break;
+      }
+
+      rayPos = hit_point;
+      rayDir = reflect(normalize(rayDir), HitNormal(hit));
+
+      k *= CookTorrance(hit, rayDir);
+
+
+  }
+
+  out_color[tidY * ubo.m_width + tidX + out_colorOffset] = EncodeColor(color);
+  //out_color[tidY * m_width + tidX] = m_palette[hit.instId % palette_size];
 
 }
 
@@ -77,9 +201,9 @@ void kernel_InitEyeRay(uint tidX, uint tidY, inout vec4 rayPosAndNear, inout vec
 {
   
   rayPosAndNear = ubo.m_camPos; // to_float4(m_camPos, 1.0f);
-  
+
   const vec3 rayDir = EyeRayDir(float(tidX), float(tidY), float(ubo.m_width), float(ubo.m_height), ubo.m_invProjView);
-  rayDirAndFar  = vec4(rayDir, MAXFLOAT);
+  rayDirAndFar  = vec4(rayDir, FLT_MAX);
 
 }
 
@@ -90,16 +214,13 @@ void main()
   ///////////////////////////////////////////////////////////////// prolog
   const uint tidX = uint(gl_GlobalInvocationID[0]); 
   const uint tidY = uint(gl_GlobalInvocationID[1]); 
-  const vec4 m_camPos = ubo.m_camPos;
-  const uint m_height = ubo.m_height;
-  const uint m_width = ubo.m_width;
   ///////////////////////////////////////////////////////////////// prolog
 
   
-  vec4 rayPosAndNear,  rayDirAndFar;
-  kernel_InitEyeRay(tidX, tidY, rayPosAndNear, rayDirAndFar);
+    vec4 rayPosAndNear,  rayDirAndFar;
+    kernel_InitEyeRay(tidX, tidY, rayPosAndNear, rayDirAndFar);
 
-  kernel_RayTrace_out_color(tidX, tidY, rayPosAndNear, rayDirAndFar, 0);
+    kernel_RayTrace_out_color(tidX, tidY, rayPosAndNear, rayDirAndFar, 0);
 
 }
 

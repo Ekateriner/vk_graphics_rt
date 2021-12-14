@@ -12,6 +12,11 @@
 #ifndef uint32_t
 #define uint32_t uint
 #endif
+#define MAXFLOAT 1e37f
+#define MINFLOAT 1e37f
+#define FLT_MAX 1e37f
+#define FLT_MIN -1e37f
+#define FLT_EPSILON 1e-6f;
 struct CRT_Hit 
 {
   float    t;         ///< intersection distance from ray origin to object
@@ -20,6 +25,34 @@ struct CRT_Hit
   uint geomId;    ///< use 4 most significant bits for geometry type; thay are zero for triangles 
   float    coords[4]; ///< custom intersection data; for triangles coords[0] and coords[1] stores baricentric coords (u,v)
 };
+struct LightInfo{
+    vec4 pos_dir;
+    vec4 color;
+    uint instance_id;
+    int type; // 0 - point, 1 - env, 2 - mesh;
+};
+struct MaterialData_pbrMR
+{
+    vec4 baseColor;
+
+    float metallic;
+    float roughness;
+    int baseColorTexId;
+    int metallicRoughnessTexId;
+
+    vec3 emissionColor;
+    int emissionTexId;
+
+    int normalTexId;
+    int occlusionTexId;
+    float alphaCutoff;
+    int alphaMode;
+};
+const uint MAX_DEPTH = 3;
+const float const_attenuation = 0.0f;
+const float linear_attenuation = 0.0f;
+const float quad_attenuation = 1.0f;
+const float PI = 3.14159265358979323846f;
 const uint palette_size = 20;
 const uint m_palette[20] = {
     0xffe6194b, 0xff3cb44b, 0xffffe119, 0xff0082c8,
@@ -34,6 +67,10 @@ const uint m_palette[20] = {
 /////////////////////////////////////////////////////////////////////
 /////////////////// local functions /////////////////////////////////
 /////////////////////////////////////////////////////////////////////
+
+uint EncodeColor(vec4 color) {
+    return int(color.x * 255 * 0x01000000) + int(color.y * 0x00FF0000) + int(color.z * 0x0000FF00) + int(color.w * 0x000000FF);
+}
 
 vec3 EyeRayDir(float x, float y, float w, float h, mat4 a_mViewProjInv) {
   vec4 pos = vec4(2.0f * (x + 0.5f) / w - 1.0f, 2.0f * (y + 0.5f) / h - 1.0f, 0.0f, 1.0f);

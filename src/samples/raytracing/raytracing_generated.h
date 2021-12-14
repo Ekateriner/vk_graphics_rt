@@ -104,6 +104,14 @@ protected:
 
   struct MembersDataGPU
   {
+    VkBuffer meshesBuffer = VK_NULL_HANDLE;
+    size_t   meshesOffset = 0;
+    VkBuffer lightsBuffer = VK_NULL_HANDLE;
+    size_t   lightsOffset = 0;
+    VkBuffer materialsBuffer = VK_NULL_HANDLE;
+    size_t   materialsOffset = 0;
+    VkBuffer mat_indices_bufBuffer = VK_NULL_HANDLE;
+    size_t   mat_indices_bufOffset = 0;
     VkDeviceMemory m_vecMem = VK_NULL_HANDLE;
     VkDeviceMemory m_texMem = VK_NULL_HANDLE;
   } m_vdata;

@@ -23,7 +23,6 @@ static uint32_t ComputeReductionAuxBufferElements(uint32_t whole_size, uint32_t 
 RayTracer_Generated::~RayTracer_Generated()
 {
   m_pMaker = nullptr;
-
   vkDestroyDescriptorSetLayout(device, CastSingleRayMegaDSLayout, nullptr);
   CastSingleRayMegaDSLayout = VK_NULL_HANDLE;
 
@@ -40,6 +39,10 @@ RayTracer_Generated::~RayTracer_Generated()
  
   vkDestroyBuffer(device, m_classDataBuffer, nullptr);
 
+  vkDestroyBuffer(device, m_vdata.meshesBuffer, nullptr);
+  vkDestroyBuffer(device, m_vdata.lightsBuffer, nullptr);
+  vkDestroyBuffer(device, m_vdata.materialsBuffer, nullptr);
+  vkDestroyBuffer(device, m_vdata.mat_indices_bufBuffer, nullptr);
 
   FreeMemoryForMemberBuffersAndImages();
   FreeMemoryForInternalBuffers();
@@ -53,7 +56,7 @@ void RayTracer_Generated::InitHelpers()
 
 VkDescriptorSetLayout RayTracer_Generated::CreateCastSingleRayMegaDSLayout()
 {
-  std::array<VkDescriptorSetLayoutBinding, 2+1> dsBindings;
+  std::array<VkDescriptorSetLayoutBinding, 6+1> dsBindings;
 
   // binding for out_color
   dsBindings[0].binding            = 0;
@@ -69,12 +72,40 @@ VkDescriptorSetLayout RayTracer_Generated::CreateCastSingleRayMegaDSLayout()
   dsBindings[1].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[1].pImmutableSamplers = nullptr;
 
-  // binding for POD members stored in m_classDataBuffer
+  // binding for lights
   dsBindings[2].binding            = 2;
   dsBindings[2].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[2].descriptorCount    = 1;
   dsBindings[2].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[2].pImmutableSamplers = nullptr;
+
+  // binding for mat_indices_buf
+  dsBindings[3].binding            = 3;
+  dsBindings[3].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[3].descriptorCount    = 1;
+  dsBindings[3].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[3].pImmutableSamplers = nullptr;
+
+  // binding for meshes
+  dsBindings[4].binding            = 4;
+  dsBindings[4].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[4].descriptorCount    = 1;
+  dsBindings[4].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[4].pImmutableSamplers = nullptr;
+
+  // binding for materials
+  dsBindings[5].binding            = 5;
+  dsBindings[5].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[5].descriptorCount    = 1;
+  dsBindings[5].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[5].pImmutableSamplers = nullptr;
+
+  // binding for POD members stored in m_classDataBuffer
+  dsBindings[6].binding            = 6;
+  dsBindings[6].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[6].descriptorCount    = 1;
+  dsBindings[6].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[6].pImmutableSamplers = nullptr;
   
   VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
   descriptorSetLayoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -155,9 +186,9 @@ void RayTracer_Generated::InitBuffers(size_t a_maxThreadsCount, bool a_tempBuffe
 
   LocalBuffers localBuffersCastSingleRay;
   localBuffersCastSingleRay.bufs.reserve(32);
-  CastSingleRay_local.rayDirAndFarBuffer = vk_utils::createBuffer(device, sizeof(LiteMath::float4)*a_maxThreadsCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  CastSingleRay_local.rayDirAndFarBuffer = vk_utils::createBuffer(device, sizeof(struct LiteMath::float4)*a_maxThreadsCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   localBuffersCastSingleRay.bufs.push_back(BufferReqPair(CastSingleRay_local.rayDirAndFarBuffer, device));
-  CastSingleRay_local.rayPosAndNearBuffer = vk_utils::createBuffer(device, sizeof(LiteMath::float4)*a_maxThreadsCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
+  CastSingleRay_local.rayPosAndNearBuffer = vk_utils::createBuffer(device, sizeof(struct LiteMath::float4)*a_maxThreadsCount, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT);
   localBuffersCastSingleRay.bufs.push_back(BufferReqPair(CastSingleRay_local.rayPosAndNearBuffer, device));
   for(const auto& pair : localBuffersCastSingleRay.bufs)
   {
@@ -201,6 +232,14 @@ void RayTracer_Generated::InitMemberBuffers()
   std::vector<VkBuffer> memberVectors;
   std::vector<VkImage>  memberTextures;
 
+  m_vdata.meshesBuffer = vk_utils::createBuffer(device, meshes.capacity()*sizeof(struct LiteMath::uint2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.meshesBuffer);
+  m_vdata.lightsBuffer = vk_utils::createBuffer(device, lights.capacity()*sizeof(struct LightInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.lightsBuffer);
+  m_vdata.materialsBuffer = vk_utils::createBuffer(device, materials.capacity()*sizeof(struct MaterialData_pbrMR), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.materialsBuffer);
+  m_vdata.mat_indices_bufBuffer = vk_utils::createBuffer(device, mat_indices_buf.capacity()*sizeof(unsigned int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.mat_indices_bufBuffer);
 
 
   AllocMemoryForMemberBuffersAndImages(memberVectors, memberTextures);
