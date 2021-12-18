@@ -13,6 +13,8 @@ SimpleRender::SimpleRender(uint32_t a_width, uint32_t a_height) : m_width(a_widt
   m_enableValidation = true;
 #endif
 
+  m_cam.pos = LiteMath::float3(-45.0f, 85.0f, 80.0f);
+  m_cam.lookAt = LiteMath::float3(25.0f, 48.0f, 18.0f);
   m_raytracedImageData.resize(m_width * m_height);
 }
 
@@ -112,7 +114,7 @@ void SimpleRender::InitVulkan(const char** a_instanceExtensions, uint32_t a_inst
 
   LoaderConfig conf = {};
   conf.load_geometry = true;
-  conf.load_materials = MATERIAL_LOAD_MODE::NONE;
+  conf.load_materials = MATERIAL_LOAD_MODE::MATERIALS_ONLY;
   if(ENABLE_HARDWARE_RT)
   {
     conf.build_acc_structs = true;

@@ -5,33 +5,49 @@
 #include "common_generated.h"
 
 layout(binding = 0, set = 0) buffer data0 { uint out_color[]; }; //
-layout(binding = 1, set = 0) uniform accelerationStructureEXT m_pAccelStruct;
-layout(binding = 2, set = 0) buffer data2 { LightInfo lights[]; }; //
-layout(binding = 3, set = 0) buffer data3 { uint mat_indices_buf[]; }; //
-layout(binding = 4, set = 0) buffer data4 { uvec2 meshes[]; }; //
-layout(binding = 5, set = 0) buffer data5 { MaterialData_pbrMR materials[]; }; //
-layout(binding = 6, set = 0) buffer dataUBO { RayTracer_UBO_Data ubo; };
+layout(binding = 1, set = 0) buffer data1 { uint indices_buf[]; }; //
+layout(binding = 2, set = 0) buffer data2 { mat4 inst_matrices[]; }; //
+layout(binding = 3, set = 0) buffer data3 { uvec2 meshes[]; }; //
+layout(binding = 4, set = 0) buffer data4 { vertex vertices_buf[]; }; //
+layout(binding = 5, set = 0) uniform accelerationStructureEXT m_pAccelStruct;
+layout(binding = 6, set = 0) buffer data6 { uint mat_indices_buf[]; }; //
+layout(binding = 7, set = 0) buffer data7 { LightInfo lights[]; }; //
+layout(binding = 8, set = 0) buffer data8 { MaterialData_pbrMR materials[]; }; //
+layout(binding = 9, set = 0) buffer dataUBO { RayTracer_UBO_Data ubo; };
 
-vec4 Shade(CRT_Hit hit, LightInfo light) {
-    vec4 normal = HitNormal(hit);
-    vec4 position = HitPos(hit);
-    uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+vec4 HitNormal(CRT_Hit hit) {
+    uint ind0 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 0];
+    uint ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
+    uint ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
 
-    float attenuation = 1.0f / (const_attenuation + linear_attenuation * hit.t + quad_attenuation * hit.t * hit.t);
+    vec4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0].pos_norm;
+    vec4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1].pos_norm;
+    vec4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2].pos_norm;
 
-    vec4 color = vec4(0.0);
-    if (light.type == 0 || light.type == 2) {
-        color = vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
-                (materials[mat_ind].baseColor * dot(normalize(normal), normalize(light.pos_dir - position)) + \
-                CookTorrance(hit, light.pos_dir - position)) * attenuation;
-    }
-    if (light.type == 1) {
-        color =  vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
-                 (materials[mat_ind].baseColor * dot(normalize(normal), normalize(-1.0f * light.pos_dir)) + \
-                 CookTorrance(hit, light.pos_dir)) * attenuation;
-    }
+    vec3 norm0 = DecodeNormal(floatBitsToInt(ver0.w));
+    vec3 norm1 = DecodeNormal(floatBitsToInt(ver1.w));
+    vec3 norm2 = DecodeNormal(floatBitsToInt(ver2.w));
 
-    return color;
+    vec3 normal = norm0 * hit.coords[0] + norm1 * hit.coords[1] + norm2 * (1 - hit.coords[0] - hit.coords[1]);
+    mat3 mat = mat3(transpose(inverse(inst_matrices[hit.instId])));
+    return vec4(normalize(mat * normal), 0.0f);
+}
+
+vec4 HitPos(CRT_Hit hit) {
+    uint ind0 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 0];
+    uint ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
+    uint ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
+
+    vec4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0].pos_norm;
+    vec4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1].pos_norm;
+    vec4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2].pos_norm;
+
+    vec3 pos0 = ver0.xyz;
+    vec3 pos1 = ver1.xyz;
+    vec3 pos2 = ver2.xyz;
+
+    vec3 position = pos0 * hit.coords[0] + pos1 * hit.coords[1] + pos2 * (1 - hit.coords[0] - hit.coords[1]);
+    return inst_matrices[hit.instId] * vec4(position, 1.0);
 }
 
 vec4 CookTorrance(CRT_Hit hit, vec4 light_dir) {
@@ -53,7 +69,7 @@ vec4 CookTorrance(CRT_Hit hit, vec4 light_dir) {
     float m2 = m * m;
     float nh2 = nh * nh;
     float d = (m2 - 1.0f) * nh2 + 1.0f;
-    d = m2 / (PI * d * d);
+    d = m2 / (M_PI * d * d);
 
     // Frensel
     float product = clamp(nv, 0.0f, 1.0f);
@@ -72,21 +88,29 @@ vec4 CookTorrance(CRT_Hit hit, vec4 light_dir) {
     return vec4(diff * materials[mat_ind].baseColor.xyz + ks * ct, 1.0);
 }
 
-vec4 HitNormal(CRT_Hit hit) {
-    uint ind0 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 0];
-    uint ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
-    uint ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
+vec4 Shade(CRT_Hit hit, LightInfo light) {
+    vec4 normal = HitNormal(hit);
+    vec4 position = HitPos(hit);
+    uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
 
-    vec4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0];
-    vec4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1];
-    vec4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2];
+    float attenuation = 1.0f / (const_attenuation + linear_attenuation * hit.t + quad_attenuation * hit.t * hit.t);
 
-    vec3 norm0 = DecodeNormal(as_uint32(ver0.w));
-    vec3 norm1 = DecodeNormal(as_uint32(ver1.w));
-    vec3 norm2 = DecodeNormal(as_uint32(ver2.w));
+    vec4 color = vec4(0.0);
+    if (light.type == 0 || light.type == 2) {
+        color = vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
+                (materials[mat_ind].baseColor * max(dot(normalize(normal), normalize(light.pos_dir - position)), 0.01f) + \
+                CookTorrance(hit, position - light.pos_dir)) * attenuation;
+    }
+    if (light.type == 1) {
+        color =  vec4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
+                 (materials[mat_ind].baseColor * max(dot(normalize(normal), normalize(-1.0f * light.pos_dir)), 0.01f) + \
+                 CookTorrance(hit, light.pos_dir));
+    }
 
-    vec3 normal = norm0 * hit.coords[0] + norm1 * hit.coords[1] + norm2 * (1 - hit.coords[0] - hit.coords[1]);
-    return normalize(transpose(inverse4x4(inst_matrices[hit.instId])) * vec4(normal, 0.0));
+    color = mix(color, light.color, light.color.w * attenuation);
+    color.w = attenuation;
+
+    return color;
 }
 
 // RayScene intersection with 'm_pAccelStruct'
@@ -150,49 +174,84 @@ void kernel_RayTrace_out_color(uint tidX, uint tidY, in vec4 rayPosAndNear, in v
 
   vec4 rayPos = rayPosAndNear;
   vec4 rayDir = rayDirAndFar ;
+  float near = rayPos.w;
+  float far = rayDir.w;
+
+//  indices_buf[0];
+//  inst_matrices[0];
+//  vertices_buf[0];
+//  DecodeNormal(as_uint32(vertices_buf[0].pos_norm.w));
 
   for(uint i = 0; i < MAX_DEPTH; i++) {
       CRT_Hit hit = m_pAccelStruct_RayQuery_NearestHit(rayPos, rayDir);
 
       if(hit.primId == -1) {
+          color = m_ambient_color;
           break;
       }
 
-      vec4 hit_point = rayPos + rayDir * hit.t;
+      vec3 hit_point = (rayPos + rayDir * hit.t).xyz;
+//      HitNormal(hit);
+//      HitPos(hit);
+      uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+
+      /*if (materials[mat_ind].metallic > 0.0f || materials[mat_ind].roughness < 1.0f) {
+          rayPos = to_float4(hit_point, near);
+
+          rayDir.w = 0.0f;
+          rayDir = reflect(normalize(rayDir), HitNormal(hit));
+          rayDir.w = far;
+
+          hit = m_pAccelStruct->RayQuery_NearestHit(rayPos, rayDir);
+          if(hit.primId == -1) {
+              break;
+          }
+          hit_point = to_float3(rayPos + rayDir * hit.t);
+          mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+      }*/
+
+      if(hit.primId == -1) {
+          color = m_ambient_color;
+          break;
+      }
 
       for (int j = 0; uint(j) < ubo.lights_size; j++) {
           if(lights[j].type == 0) {
-              if (!m_pAccelStruct_RayQuery_AnyHit(hit_point, lights[j].pos_dir - hit_point)) {
-                  color = k * Shade(hit, lights[j]);
+              vec3 dir = lights[j].pos_dir.xyz - hit_point;
+              if (!m_pAccelStruct_RayQuery_AnyHit(vec4(hit_point, near), vec4(dir, far))) {
+                  vec4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
           else if (lights[j].type == 1) {
-              if (!m_pAccelStruct_RayQuery_AnyHit(hit_point, -1 * lights[j].pos_dir)) {
-                  color = k * Shade(hit, lights[j]);
+              vec3 dir = -1 * lights[j].pos_dir.xyz;
+              if (!m_pAccelStruct_RayQuery_AnyHit(vec4(hit_point, near), vec4(dir, far))) {
+                  vec4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
           else {
-              if (m_pAccelStruct_RayQuery_NearestHit(hit_point, lights[j].pos_dir - hit_point).instId == lights[j].instance_id) {
-                  color = k * Shade(hit, lights[j]);
+              vec3 dir = lights[j].pos_dir.xyz - hit_point;
+              if (m_pAccelStruct_RayQuery_NearestHit(vec4(hit_point, near), vec4(dir, far)).instId == lights[j].instance_id) {
+                  vec4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
       }
-
-      uint mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
 
       if (materials[mat_ind].metallic <= 10e-4){
           break;
       }
 
-      rayPos = hit_point;
+      rayPos = vec4(hit_point, near);
+      rayDir.w = 0.0f;
       rayDir = reflect(normalize(rayDir), HitNormal(hit));
-
       k *= CookTorrance(hit, rayDir);
 
-
+      rayDir.w = far;
   }
 
-  out_color[tidY * ubo.m_width + tidX + out_colorOffset] = EncodeColor(color);
+  out_color[tidY * ubo.m_width + tidX + out_colorOffset] = color_pack_rgba(color);
   //out_color[tidY * m_width + tidX] = m_palette[hit.instId % palette_size];
 
 }

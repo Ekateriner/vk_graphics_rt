@@ -25,12 +25,6 @@ struct CRT_Hit
   uint geomId;    ///< use 4 most significant bits for geometry type; thay are zero for triangles 
   float    coords[4]; ///< custom intersection data; for triangles coords[0] and coords[1] stores baricentric coords (u,v)
 };
-struct LightInfo{
-    vec4 pos_dir;
-    vec4 color;
-    uint instance_id;
-    int type; // 0 - point, 1 - env, 2 - mesh;
-};
 struct MaterialData_pbrMR
 {
     vec4 baseColor;
@@ -48,11 +42,21 @@ struct MaterialData_pbrMR
     float alphaCutoff;
     int alphaMode;
 };
-const uint MAX_DEPTH = 3;
+struct LightInfo{
+    vec4 pos_dir;
+    vec4 color;
+    uint instance_id;
+    int type; // 0 - point, 1 - env, 2 - mesh;
+};
+struct vertex {
+    vec4 pos_norm;
+    vec4 tex_tan;
+};
+const uint MAX_DEPTH = 2;
 const float const_attenuation = 0.0f;
-const float linear_attenuation = 0.0f;
+const float linear_attenuation = 0.5f;
 const float quad_attenuation = 1.0f;
-const float PI = 3.14159265358979323846f;
+const vec4 m_ambient_color = vec4(0.2f, 0.2f, 0.2f, 0.2f);
 const uint palette_size = 20;
 const uint m_palette[20] = {
     0xffe6194b, 0xff3cb44b, 0xffffe119, 0xff0082c8,
@@ -68,8 +72,30 @@ const uint m_palette[20] = {
 /////////////////// local functions /////////////////////////////////
 /////////////////////////////////////////////////////////////////////
 
-uint EncodeColor(vec4 color) {
-    return int(color.x * 255 * 0x01000000) + int(color.y * 0x00FF0000) + int(color.z * 0x0000FF00) + int(color.w * 0x000000FF);
+uint color_pack_rgba(vec4 rel_col)
+{
+//    vec4 const_255 = vec4(255.0f);
+//    int4 rgba = floatBitsToInt(rel_col*const_255);
+//    return (rgba[3] << 24) | (rgba[2] << 16) | (rgba[1] << 8) | rgba[0];
+    return int(rel_col.x * 255 * 0x01000000) + int(rel_col.y * 0x00FF0000) + int(rel_col.z * 0x0000FF00) + int(rel_col.w * 0x000000FF);
+}
+
+vec3 DecodeNormal(uint a_data) {
+    const uint a_enc_x = (a_data  & 0x0000FFFFu);
+    const uint a_enc_y = ((a_data & 0xFFFF0000u) >> 16);
+    const float sign   = (a_enc_x & 0x0001u) != 0 ? -1.0f : 1.0f;
+
+    const int usX = int(a_enc_x & 0x0000FFFEu);
+    const int usY = int(a_enc_y & 0x0000FFFFu);
+
+    const int sX  = (usX <= 32767) ? usX : usX - 65536;
+    const int sY  = (usY <= 32767) ? usY : usY - 65536;
+
+    const float x = float(sX)*(1.0f / 32767.0f);
+    const float y = float(sY)*(1.0f / 32767.0f);
+    const float z = sign*sqrt(max(1.0f - x*x - y*y, 0.0f));
+
+    return vec3(x,y,z);
 }
 
 vec3 EyeRayDir(float x, float y, float w, float h, mat4 a_mViewProjInv) {

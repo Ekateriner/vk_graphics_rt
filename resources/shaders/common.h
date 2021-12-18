@@ -28,7 +28,7 @@ struct UniformParams
   bool animateLightColor;
 };
 
-struct MaterialData_pbrMR
+/*struct MaterialData_pbrMR
 {
   vec4 baseColor;
 
@@ -45,5 +45,12 @@ struct MaterialData_pbrMR
   float alphaCutoff;
   int alphaMode;
 };
+
+struct LightInfo{
+    float4 pos_dir;
+    float4 color;
+    uint32_t instance_id;
+    int type; // 0 - point, 1 - env, 2 - mesh;
+};*/
 
 #endif //VK_GRAPHICS_BASIC_COMMON_H

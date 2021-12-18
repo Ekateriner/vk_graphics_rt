@@ -83,7 +83,10 @@ void SimpleRender::RayTraceCPU()
   if(!m_pRayTracerCPU)
   {
     m_pRayTracerCPU = std::make_unique<RayTracer>(m_width, m_height);
-    m_pRayTracerCPU->SetScene(m_pAccelStruct);
+    m_pRayTracerCPU->SetScene(m_pAccelStruct, m_pScnMgr->GetLightsVector(),
+                              m_pScnMgr->GetMeshInfoVector(), m_pScnMgr->GetMaterialsVector(),
+                              m_pScnMgr->GetInstanceMatVector(), m_pScnMgr->GetVertexVector(),
+                              m_pScnMgr->GetIndexVector(), m_pScnMgr->GetMaterialIDsVector());
   }
 
   m_pRayTracerCPU->UpdateView(m_cam.pos, m_inverseProjViewMatrix);
@@ -115,7 +118,10 @@ void SimpleRender::RayTraceGPU()
     auto tmp = std::make_shared<VulkanRTX>(m_pScnMgr);
     tmp->CommitScene();
 
-    m_pRayTracerGPU->SetScene(tmp);
+    m_pRayTracerGPU->SetScene(tmp, m_pScnMgr->GetLightsVector(),
+                              m_pScnMgr->GetMeshInfoVector(), m_pScnMgr->GetMaterialsVector(),
+                              m_pScnMgr->GetInstanceMatVector(), m_pScnMgr->GetVertexVector(),
+                              m_pScnMgr->GetIndexVector(), m_pScnMgr->GetMaterialIDsVector());
     m_pRayTracerGPU->SetVulkanInOutFor_CastSingleRay(m_genColorBuffer, 0);
     m_pRayTracerGPU->UpdateAll(m_pCopyHelper);
   }

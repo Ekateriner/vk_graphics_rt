@@ -75,6 +75,16 @@ SceneManager::SceneManager(VkDevice a_device, VkPhysicalDevice a_physDevice, uin
   m_useRTX = m_config.build_acc_structs && m_config.builder_type == BVH_BUILDER_TYPE::RTX;
 
   m_pool = vk_utils::createCommandPool(m_device, m_graphicsQId, VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT);
+
+  //add lights
+  m_lights.push_back({.pos_dir = LiteMath::normalize(LiteMath::float4(0.5f, -1.0f, 0.5f, 0.0f)),
+                      .color = LiteMath::float4(1.0f, 1.0f, 1.0f, 0.2f), .type=1});
+  m_lights.push_back({.pos_dir = LiteMath::normalize(LiteMath::float4(-0.5f, -1.0f, -0.5f, 0.0f)),
+                      .color = LiteMath::float4(1.0f, 1.0f, 1.0f, 0.2f), .type=1});
+//  m_lights.push_back({.pos_dir = LiteMath::float4(50.0f, 100.0f, 20.0f, 1.0f),
+//                      .color = LiteMath::float4(0.0f, 0.0f, 1.0f, 0.2f), .type=0});
+  m_lights.push_back({.pos_dir = LiteMath::float4(0.0f, 0.0f, 0.0f, 1.0f),
+                      .color = LiteMath::float4(0.0f, 1.0f, 0.0f, 0.2f), .type=0});
 }
 
 
@@ -261,6 +271,11 @@ void SceneManager::InitGeoBuffersGPU(uint32_t a_meshNum, uint32_t a_totalVertNum
   }
 
   m_geoMemAlloc = vk_utils::allocateAndBindWithPadding(m_device, m_physDevice, all_buffers, allocFlags);
+
+  VkDeviceSize lightsBufSize = m_lights.size() * sizeof(LightInfo);
+
+  m_lightsBuf = vk_utils::createBuffer(m_device, lightsBufSize, flags);
+  m_lightsMemAlloc    = vk_utils::allocateAndBindWithPadding(m_device, m_physDevice, {m_lightsBuf});
 }
 
 void SceneManager::LoadOneMeshOnGPU(uint32_t meshIdx)
@@ -311,6 +326,8 @@ void SceneManager::LoadCommonGeoDataOnGPU()
   {
     m_pCopyHelper->UpdateBuffer(m_meshInfoBuf, 0, mesh_info_tmp.data(), mesh_info_tmp.size() * sizeof(mesh_info_tmp[0]));
   }
+
+  m_pCopyHelper->UpdateBuffer(m_lightsBuf, 0, m_lights.data(), m_lights.size() * sizeof(LightInfo));
 }
 
 void SceneManager::LoadInstanceDataOnGPU()
@@ -484,6 +501,18 @@ void SceneManager::DestroyScene()
   {
     vkFreeMemory(m_device, m_matMemAlloc, nullptr);
     m_matMemAlloc = VK_NULL_HANDLE;
+  }
+
+  if(m_lightsBuf != VK_NULL_HANDLE)
+  {
+    vkDestroyBuffer(m_device, m_lightsBuf, nullptr);
+    m_lightsBuf = VK_NULL_HANDLE;
+  }
+
+  if(m_lightsMemAlloc != VK_NULL_HANDLE)
+  {
+    vkFreeMemory(m_device, m_lightsMemAlloc, nullptr);
+    m_lightsMemAlloc = VK_NULL_HANDLE;
   }
 
   for(auto& [_, tex] : m_texturesById)

@@ -39,6 +39,9 @@ RayTracer_Generated::~RayTracer_Generated()
  
   vkDestroyBuffer(device, m_classDataBuffer, nullptr);
 
+  vkDestroyBuffer(device, m_vdata.indices_bufBuffer, nullptr);
+  vkDestroyBuffer(device, m_vdata.vertices_bufBuffer, nullptr);
+  vkDestroyBuffer(device, m_vdata.inst_matricesBuffer, nullptr);
   vkDestroyBuffer(device, m_vdata.meshesBuffer, nullptr);
   vkDestroyBuffer(device, m_vdata.lightsBuffer, nullptr);
   vkDestroyBuffer(device, m_vdata.materialsBuffer, nullptr);
@@ -56,7 +59,7 @@ void RayTracer_Generated::InitHelpers()
 
 VkDescriptorSetLayout RayTracer_Generated::CreateCastSingleRayMegaDSLayout()
 {
-  std::array<VkDescriptorSetLayoutBinding, 6+1> dsBindings;
+  std::array<VkDescriptorSetLayoutBinding, 9+1> dsBindings;
 
   // binding for out_color
   dsBindings[0].binding            = 0;
@@ -65,47 +68,68 @@ VkDescriptorSetLayout RayTracer_Generated::CreateCastSingleRayMegaDSLayout()
   dsBindings[0].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[0].pImmutableSamplers = nullptr;
 
-  // binding for m_pAccelStruct
+  // binding for indices_buf
   dsBindings[1].binding            = 1;
-  dsBindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+  dsBindings[1].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[1].descriptorCount    = 1;
   dsBindings[1].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[1].pImmutableSamplers = nullptr;
 
-  // binding for lights
+  // binding for inst_matrices
   dsBindings[2].binding            = 2;
   dsBindings[2].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[2].descriptorCount    = 1;
   dsBindings[2].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[2].pImmutableSamplers = nullptr;
 
-  // binding for mat_indices_buf
+  // binding for meshes
   dsBindings[3].binding            = 3;
   dsBindings[3].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[3].descriptorCount    = 1;
   dsBindings[3].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[3].pImmutableSamplers = nullptr;
 
-  // binding for meshes
+  // binding for vertices_buf
   dsBindings[4].binding            = 4;
   dsBindings[4].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[4].descriptorCount    = 1;
   dsBindings[4].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[4].pImmutableSamplers = nullptr;
 
-  // binding for materials
+  // binding for m_pAccelStruct
   dsBindings[5].binding            = 5;
-  dsBindings[5].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[5].descriptorType     = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
   dsBindings[5].descriptorCount    = 1;
   dsBindings[5].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[5].pImmutableSamplers = nullptr;
 
-  // binding for POD members stored in m_classDataBuffer
+  // binding for mat_indices_buf
   dsBindings[6].binding            = 6;
   dsBindings[6].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
   dsBindings[6].descriptorCount    = 1;
   dsBindings[6].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
   dsBindings[6].pImmutableSamplers = nullptr;
+
+  // binding for lights
+  dsBindings[7].binding            = 7;
+  dsBindings[7].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[7].descriptorCount    = 1;
+  dsBindings[7].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[7].pImmutableSamplers = nullptr;
+
+  // binding for materials
+  dsBindings[8].binding            = 8;
+  dsBindings[8].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[8].descriptorCount    = 1;
+  dsBindings[8].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[8].pImmutableSamplers = nullptr;
+
+  // binding for POD members stored in m_classDataBuffer
+  dsBindings[9].binding            = 9;
+  dsBindings[9].descriptorType     = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+  dsBindings[9].descriptorCount    = 1;
+  dsBindings[9].stageFlags         = VK_SHADER_STAGE_COMPUTE_BIT;
+  dsBindings[9].pImmutableSamplers = nullptr;
   
   VkDescriptorSetLayoutCreateInfo descriptorSetLayoutCreateInfo = {};
   descriptorSetLayoutCreateInfo.sType        = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
@@ -232,6 +256,12 @@ void RayTracer_Generated::InitMemberBuffers()
   std::vector<VkBuffer> memberVectors;
   std::vector<VkImage>  memberTextures;
 
+  m_vdata.indices_bufBuffer = vk_utils::createBuffer(device, indices_buf.capacity()*sizeof(unsigned int), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.indices_bufBuffer);
+  m_vdata.vertices_bufBuffer = vk_utils::createBuffer(device, vertices_buf.capacity()*sizeof(struct vertex), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.vertices_bufBuffer);
+  m_vdata.inst_matricesBuffer = vk_utils::createBuffer(device, inst_matrices.capacity()*sizeof(struct LiteMath::float4x4), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+  memberVectors.push_back(m_vdata.inst_matricesBuffer);
   m_vdata.meshesBuffer = vk_utils::createBuffer(device, meshes.capacity()*sizeof(struct LiteMath::uint2), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
   memberVectors.push_back(m_vdata.meshesBuffer);
   m_vdata.lightsBuffer = vk_utils::createBuffer(device, lights.capacity()*sizeof(struct LightInfo), VK_BUFFER_USAGE_STORAGE_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);

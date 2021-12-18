@@ -22,6 +22,10 @@ struct RayTracer_UBO_Data
   vec4 m_camPos; 
   uint m_height; 
   uint m_width; 
+  uint indices_buf_capacity; 
+  uint indices_buf_size; 
+  uint inst_matrices_capacity; 
+  uint inst_matrices_size; 
   uint lights_capacity; 
   uint lights_size; 
   uint m_pAccelStruct_capacity; 
@@ -32,6 +36,8 @@ struct RayTracer_UBO_Data
   uint materials_size; 
   uint meshes_capacity; 
   uint meshes_size; 
+  uint vertices_buf_capacity; 
+  uint vertices_buf_size; 
   uint dummy_last;
 };
 

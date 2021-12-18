@@ -104,6 +104,12 @@ protected:
 
   struct MembersDataGPU
   {
+    VkBuffer indices_bufBuffer = VK_NULL_HANDLE;
+    size_t   indices_bufOffset = 0;
+    VkBuffer vertices_bufBuffer = VK_NULL_HANDLE;
+    size_t   vertices_bufOffset = 0;
+    VkBuffer inst_matricesBuffer = VK_NULL_HANDLE;
+    size_t   inst_matricesOffset = 0;
     VkBuffer meshesBuffer = VK_NULL_HANDLE;
     size_t   meshesOffset = 0;
     VkBuffer lightsBuffer = VK_NULL_HANDLE;

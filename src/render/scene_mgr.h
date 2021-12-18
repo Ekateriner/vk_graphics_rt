@@ -13,7 +13,7 @@
 #include "../loader_utils/image_loader.h"
 #include "tiny_gltf.h"
 #include "../resources/shaders/common.h"
-
+#include "common.h"
 
 struct InstanceInfo
 {
@@ -48,7 +48,7 @@ enum class MATERIAL_LOAD_MODE
 struct LoaderConfig
 {
   bool load_geometry = true;
-  MATERIAL_LOAD_MODE load_materials = MATERIAL_LOAD_MODE::NONE;
+  MATERIAL_LOAD_MODE load_materials = MATERIAL_LOAD_MODE::MATERIALS_AND_TEXTURES;
   bool build_acc_structs = false;
   bool build_acc_structs_while_loading_scene = false;
   bool instance_matrix_as_vertex_attribute = false;
@@ -84,12 +84,50 @@ struct SceneManager
 
   VkPipelineVertexInputStateCreateInfo GetPipelineVertexInputStateCreateInfo();
 
+  VkBuffer GetLightsBuffer()       const { return m_lightsBuf; }
   VkBuffer GetVertexBuffer()       const { return m_geoVertBuf; }
   VkBuffer GetIndexBuffer()        const { return m_geoIdxBuf; }
   VkBuffer GetMeshInfoBuffer()     const { return m_meshInfoBuf; }
   VkBuffer GetInstanceMatBuffer()  const { return m_instMatricesBuf; }
   VkBuffer GetMaterialsBuffer()    const { return m_materialBuf; }
   VkBuffer GetMaterialIDsBuffer()  const { return m_matIdsBuf; }
+
+  std::vector<LightInfo> GetLightsVector() const {
+      return m_lights;
+  }
+
+  std::vector<vertex> GetVertexVector() const {
+      std::vector<vertex> vert;
+      vert.resize(m_pMeshData->VertexDataSize() / m_pMeshData->SingleVertexSize());
+      memcpy(vert.data(), m_pMeshData->VertexData(), m_pMeshData->VertexDataSize());
+      return vert; }
+
+  std::vector<uint32_t> GetIndexVector() const {
+        std::vector<uint32_t> ind;
+        ind.resize(m_pMeshData->IndexDataSize());
+        memcpy(ind.data(), m_pMeshData->IndexData(), m_pMeshData->IndexDataSize());
+        return ind; }
+
+  std::vector<LiteMath::uint2> GetMeshInfoVector() const {
+      std::vector<LiteMath::uint2> mesh_info_tmp;
+      for(const auto& m : m_meshInfos)
+      {
+          mesh_info_tmp.emplace_back(m.m_indexOffset, m.m_vertexOffset);
+      }
+      return mesh_info_tmp;
+  }
+
+  std::vector<LiteMath::float4x4> GetInstanceMatVector() const {
+      return m_instanceMatrices;
+  }
+
+  std::vector<MaterialData_pbrMR> GetMaterialsVector() const {
+      return m_materials;
+  }
+
+  std::vector<uint32_t> GetMaterialIDsVector() const {
+      return m_matIDs;
+  }
 
   std::vector<VkSampler> GetTextureSamplers() const { return m_samplers; }
   std::vector<VkImageView>  GetTextureViews() const { return m_textureViews; }
@@ -144,6 +182,10 @@ private:
 
   VkBuffer m_instMatricesBuf    = VK_NULL_HANDLE;
   VkDeviceMemory m_instMemAlloc = VK_NULL_HANDLE;
+
+  std::vector<LightInfo> m_lights = {};
+  VkBuffer m_lightsBuf = VK_NULL_HANDLE;
+  VkDeviceMemory m_lightsMemAlloc = VK_NULL_HANDLE;
 
   VkDeviceSize m_loadedVertices = 0;
   VkDeviceSize m_loadedIndices  = 0;

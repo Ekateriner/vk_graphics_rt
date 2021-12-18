@@ -16,10 +16,6 @@ float3 EyeRayDir(float x, float y, float w, float h, float4x4 a_mViewProjInv)
   return normalize(to_float3(pos));
 }
 
-uint EncodeColor(float4 color) {
-    return int(color.x * 255 * 0x01000000) + int(color.y * 0x00FF0000) + int(color.z * 0x0000FF00) + int(color.w * 0x000000FF);
-}
-
 float3 DecodeNormal(uint a_data)
 {
     const uint a_enc_x = (a_data  & 0x0000FFFFu);
@@ -55,49 +51,84 @@ void RayTracer::kernel_RayTrace(uint32_t tidX, uint32_t tidY, const float4* rayP
 
   float4 rayPos = *rayPosAndNear;
   float4 rayDir = *rayDirAndFar ;
+  float near = rayPos.w;
+  float far = rayDir.w;
+
+//  indices_buf[0];
+//  inst_matrices[0];
+//  vertices_buf[0];
+//  DecodeNormal(as_uint32(vertices_buf[0].pos_norm.w));
 
   for(uint32_t i = 0; i < MAX_DEPTH; i++) {
       CRT_Hit hit = m_pAccelStruct->RayQuery_NearestHit(rayPos, rayDir);
 
       if(hit.primId == -1) {
+          color = m_ambient_color;
           break;
       }
 
-      float4 hit_point = rayPos + rayDir * hit.t;
+      float3 hit_point = to_float3(rayPos + rayDir * hit.t);
+//      HitNormal(hit);
+//      HitPos(hit);
+      uint32_t mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+
+      /*if (materials[mat_ind].metallic > 0.0f || materials[mat_ind].roughness < 1.0f) {
+          rayPos = to_float4(hit_point, near);
+
+          rayDir.w = 0.0f;
+          rayDir = reflect(normalize(rayDir), HitNormal(hit));
+          rayDir.w = far;
+
+          hit = m_pAccelStruct->RayQuery_NearestHit(rayPos, rayDir);
+          if(hit.primId == -1) {
+              break;
+          }
+          hit_point = to_float3(rayPos + rayDir * hit.t);
+          mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
+      }*/
+
+      if(hit.primId == -1) {
+          color = m_ambient_color;
+          break;
+      }
 
       for (int j = 0; j < lights.size(); j++) {
           if(lights[j].type == 0) {
-              if (!m_pAccelStruct->RayQuery_AnyHit(hit_point, lights[j].pos_dir - hit_point)) {
-                  color = k * Shade(hit, lights[j]);
+              float3 dir = to_float3(lights[j].pos_dir) - hit_point;
+              if (!m_pAccelStruct->RayQuery_AnyHit(to_float4(hit_point, near), to_float4(dir, far))) {
+                  float4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
           else if (lights[j].type == 1) {
-              if (!m_pAccelStruct->RayQuery_AnyHit(hit_point, -1 * lights[j].pos_dir)) {
-                  color = k * Shade(hit, lights[j]);
+              float3 dir = -1 * to_float3(lights[j].pos_dir);
+              if (!m_pAccelStruct->RayQuery_AnyHit(to_float4(hit_point, near), to_float4(dir, far))) {
+                  float4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
           else {
-              if (m_pAccelStruct->RayQuery_NearestHit(hit_point, lights[j].pos_dir - hit_point).instId == lights[j].instance_id) {
-                  color = k * Shade(hit, lights[j]);
+              float3 dir = to_float3(lights[j].pos_dir) - hit_point;
+              if (m_pAccelStruct->RayQuery_NearestHit(to_float4(hit_point, near), to_float4(dir, far)).instId == lights[j].instance_id) {
+                  float4 temp_color = k * Shade(hit, lights[j]);
+                  color = (temp_color * temp_color.w + color * color.w) / (temp_color.w + color.w);
               }
           }
       }
-
-      uint32_t mat_ind = mat_indices_buf[meshes[hit.geomId].x / 3 + hit.primId];
 
       if (materials[mat_ind].metallic <= 10e-4){
           break;
       }
 
-      rayPos = hit_point;
+      rayPos = to_float4(hit_point, near);
+      rayDir.w = 0.0f;
       rayDir = reflect(normalize(rayDir), HitNormal(hit));
-
       k *= CookTorrance(hit, rayDir);
 
-
+      rayDir.w = far;
   }
 
-  out_color[tidY * m_width + tidX] = EncodeColor(color);
+  out_color[tidY * m_width + tidX] = color_pack_rgba(color);
   //out_color[tidY * m_width + tidX] = m_palette[hit.instId % palette_size];
 }
 
@@ -114,16 +145,19 @@ float4 RayTracer::HitNormal(CRT_Hit hit) {
     uint32_t ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
     uint32_t ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
 
-    float4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0];
-    float4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1];
-    float4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2];
+    float4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0].pos_norm;
+    float4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1].pos_norm;
+    float4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2].pos_norm;
 
     float3 norm0 = DecodeNormal(as_uint32(ver0.w));
     float3 norm1 = DecodeNormal(as_uint32(ver1.w));
     float3 norm2 = DecodeNormal(as_uint32(ver2.w));
 
     float3 normal = norm0 * hit.coords[0] + norm1 * hit.coords[1] + norm2 * (1 - hit.coords[0] - hit.coords[1]);
-    return normalize(transpose(inverse4x4(inst_matrices[hit.instId])) * to_float4(normal, 0.0));
+    float4x4 mat = transpose(inverse4x4(inst_matrices[hit.instId]));
+    mat.set_col(3, float4(0.0f));
+    mat.set_row(3, float4(0.0f));
+    return normalize(mat * to_float4(normal, 0.0f));
 }
 
 float4 RayTracer::HitPos(CRT_Hit hit) {
@@ -131,9 +165,9 @@ float4 RayTracer::HitPos(CRT_Hit hit) {
     uint32_t ind1 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 1];
     uint32_t ind2 = indices_buf[meshes[hit.geomId].x + 3 * hit.primId + 2];
 
-    float4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0];
-    float4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1];
-    float4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2];
+    float4 ver0 = vertices_buf[meshes[hit.geomId].y + ind0].pos_norm;
+    float4 ver1 = vertices_buf[meshes[hit.geomId].y + ind1].pos_norm;
+    float4 ver2 = vertices_buf[meshes[hit.geomId].y + ind2].pos_norm;
 
     float3 pos0 = to_float3(ver0);
     float3 pos1 = to_float3(ver1);
@@ -162,7 +196,7 @@ float4 RayTracer::CookTorrance(CRT_Hit hit, float4 light_dir) {
     float m2 = m * m;
     float nh2 = nh * nh;
     float d = (m2 - 1.0f) * nh2 + 1.0f;
-    d = m2 / (PI * d * d);
+    d = m2 / (M_PI * d * d);
 
     // Frensel
     float product = clamp(nv, 0.0f, 1.0f);
@@ -191,14 +225,17 @@ float4 RayTracer::Shade(CRT_Hit hit, LightInfo light) {
     float4 color = float4(0.0);
     if (light.type == 0 || light.type == 2) {
         color = to_float4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
-                (materials[mat_ind].baseColor * dot(normalize(normal), normalize(light.pos_dir - position)) + \
-                CookTorrance(hit, light.pos_dir - position)) * attenuation;
+                (materials[mat_ind].baseColor * max(dot(normalize(normal), normalize(light.pos_dir - position)), 0.01f) + \
+                CookTorrance(hit, position - light.pos_dir)) * attenuation;
     }
     if (light.type == 1) {
         color =  to_float4(materials[mat_ind].emissionColor, 1.0) + m_ambient_color + \
-                 (materials[mat_ind].baseColor * dot(normalize(normal), normalize(-1.0f * light.pos_dir)) + \
-                 CookTorrance(hit, light.pos_dir)) * attenuation;
+                 (materials[mat_ind].baseColor * max(dot(normalize(normal), normalize(-1.0f * light.pos_dir)), 0.01f) + \
+                 CookTorrance(hit, light.pos_dir));
     }
+
+    color = mix(color, light.color, light.color.w * attenuation);
+    color.w = attenuation;
 
     return color;
 }

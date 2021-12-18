@@ -6,33 +6,8 @@
 #include <iostream>
 #include <vector>
 #include "LiteMath.h"
-using namespace LiteMath;
 #include "render/CrossRT.h"
-
-struct LightInfo{
-    float4 pos_dir;
-    float4 color;
-    uint32_t instance_id;
-    int type; // 0 - point, 1 - env, 2 - mesh;
-};
-
-struct MaterialData_pbrMR
-{
-    float4 baseColor;
-
-    float metallic;
-    float roughness;
-    int baseColorTexId;
-    int metallicRoughnessTexId;
-
-    float3 emissionColor;
-    int emissionTexId;
-
-    int normalTexId;
-    int occlusionTexId;
-    float alphaCutoff;
-    int alphaMode;
-};
+#include "../render/common.h"
 
 
 class RayTracer
@@ -41,7 +16,16 @@ public:
   RayTracer(uint32_t a_width, uint32_t a_height) : m_width(a_width), m_height(a_height) {}
 
   void UpdateView(const LiteMath::float3& a_camPos, const LiteMath::float4x4& a_invProjView ) { m_camPos = to_float4(a_camPos, 1.0f); m_invProjView = a_invProjView; }
-  void SetScene(std::shared_ptr<ISceneObject> a_pAccelStruct) { m_pAccelStruct = a_pAccelStruct; };
+  void SetScene(std::shared_ptr<ISceneObject> a_pAccelStruct,
+                std::vector<LightInfo> _lights,
+                std::vector<LiteMath::uint2> _meshes,
+                std::vector<MaterialData_pbrMR> _materials,
+                std::vector<LiteMath::float4x4> _inst_matrices,
+                std::vector<vertex> _vertices_buf,
+                std::vector<uint32_t> _indices_buf,
+                std::vector<uint32_t> _mat_indices_buf) { m_pAccelStruct = a_pAccelStruct; lights = _lights;
+                meshes = _meshes; materials = _materials; inst_matrices = _inst_matrices;
+                vertices_buf = _vertices_buf; indices_buf = _indices_buf; mat_indices_buf = _mat_indices_buf; };
 
   //uint32_t EncodeColor(LiteMath::float4 color);
   //LiteMath::float3 DecodeNormal(uint32_t a_data);
@@ -66,24 +50,23 @@ protected:
 
   LiteMath::float4   m_camPos;
   LiteMath::float4x4 m_invProjView;
-  LiteMath::float4   m_ambient_color;
 
   std::vector<LightInfo> lights;
   std::vector<LiteMath::uint2> meshes;
   std::vector<MaterialData_pbrMR> materials;
   std::vector<LiteMath::float4x4> inst_matrices;
-  std::vector<LiteMath::float4> vertices_buf;
+  std::vector<vertex> vertices_buf;
   std::vector<uint32_t> indices_buf;
   std::vector<uint32_t> mat_indices_buf;
 
 
   std::shared_ptr<ISceneObject> m_pAccelStruct;
 
-  static constexpr uint32_t MAX_DEPTH = 3;
+  static constexpr uint32_t MAX_DEPTH = 2;
   static constexpr float const_attenuation = 0.0f;
-  static constexpr float linear_attenuation = 0.0f;
+  static constexpr float linear_attenuation = 0.5f;
   static constexpr float quad_attenuation = 1.0f;
-  static constexpr float PI = 3.14159265358979323846f;
+  inline static const LiteMath::float4 m_ambient_color = LiteMath::float4(0.2f, 0.2f, 0.2f, 0.2f);
 
   static constexpr uint32_t palette_size = 20;
   // color palette to select color for objects based on mesh/instance id

@@ -47,6 +47,12 @@ void RayTracer_Generated::UpdatePlainMembers(std::shared_ptr<vk_utils::ICopyEngi
   m_uboData.m_camPos = m_camPos;
   m_uboData.m_height = m_height;
   m_uboData.m_width = m_width;
+  m_uboData.indices_buf_size     = uint32_t( indices_buf.size() );    assert( indices_buf.size() < maxAllowedSize );
+  m_uboData.indices_buf_capacity = uint32_t( indices_buf.capacity() ); assert( indices_buf.capacity() < maxAllowedSize );
+  m_uboData.vertices_buf_size     = uint32_t( vertices_buf.size() );    assert( vertices_buf.size() < maxAllowedSize );
+  m_uboData.vertices_buf_capacity = uint32_t( vertices_buf.capacity() ); assert( vertices_buf.capacity() < maxAllowedSize );
+  m_uboData.inst_matrices_size     = uint32_t( inst_matrices.size() );    assert( inst_matrices.size() < maxAllowedSize );
+  m_uboData.inst_matrices_capacity = uint32_t( inst_matrices.capacity() ); assert( inst_matrices.capacity() < maxAllowedSize );
   m_uboData.meshes_size     = uint32_t( meshes.size() );    assert( meshes.size() < maxAllowedSize );
   m_uboData.meshes_capacity = uint32_t( meshes.capacity() ); assert( meshes.capacity() < maxAllowedSize );
   m_uboData.lights_size     = uint32_t( lights.size() );    assert( lights.size() < maxAllowedSize );
@@ -60,6 +66,12 @@ void RayTracer_Generated::UpdatePlainMembers(std::shared_ptr<vk_utils::ICopyEngi
 
 void RayTracer_Generated::UpdateVectorMembers(std::shared_ptr<vk_utils::ICopyEngine> a_pCopyEngine)
 {
+  if(indices_buf.size() > 0)
+    a_pCopyEngine->UpdateBuffer(m_vdata.indices_bufBuffer, 0, indices_buf.data(), indices_buf.size()*sizeof(unsigned int) );
+  if(vertices_buf.size() > 0)
+    a_pCopyEngine->UpdateBuffer(m_vdata.vertices_bufBuffer, 0, vertices_buf.data(), vertices_buf.size()*sizeof(struct vertex) );
+  if(inst_matrices.size() > 0)
+    a_pCopyEngine->UpdateBuffer(m_vdata.inst_matricesBuffer, 0, inst_matrices.data(), inst_matrices.size()*sizeof(struct LiteMath::float4x4) );
   if(meshes.size() > 0)
     a_pCopyEngine->UpdateBuffer(m_vdata.meshesBuffer, 0, meshes.data(), meshes.size()*sizeof(struct LiteMath::uint2) );
   if(lights.size() > 0)
